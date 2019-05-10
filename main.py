@@ -1,6 +1,8 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt 
+import numpy as np
+
+import cluster
 
 kaggle_prices = './kaggle_data/prices.csv'
 bloomberg_data = './bloomberg_data.csv'
@@ -78,3 +80,5 @@ print(projected_data.shape)
 
 loading_mat = weight_mat.T
 
+preds = cluster.kmeans(loading_mat)
+groups = cluster.get_groups(preds)
