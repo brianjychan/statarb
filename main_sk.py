@@ -44,6 +44,7 @@ df = df.iloc[:,0:500]
 old_df = df'''
 
 ''' Data normalization '''
+price_df = df 
 tomorrow_price = df.iloc[:,1:]
 today_price = df.iloc[:,0:(df.shape[1]-1)]
 df = pd.DataFrame((tomorrow_price.values-today_price.values)/today_price.values,columns=today_price.columns, index = today_price.index)
@@ -194,9 +195,10 @@ def OU_residual_score(ts_1, ts_2):
     model = statsmodels.tsa.api.ARMA(res_ts,order=(1,0)).fit(disp=False)
     #print(model.summary())
     p_values = model.pvalues[1]
+    coefs = model.params
     #p_values = statsmodels.stats.diagnostic.acorr_ljungbox(model.resid)[1]
     #res_score = np.min(p_values)
-    return p_values
+    return p_values, coefs 
 
 score_matrices = []
 good_pairs = []
@@ -206,16 +208,86 @@ for i in range(no_groups):
     score_matrix = np.zeros((group_len,group_len))
     for j in range(group_len):
         for k in range(j+1,group_len):
-            # print(j,k)
-            score_matrix[j,k] = OU_residual_score(df.iloc[this_group[j],:],df.iloc[this_group[k],:])
-            if(score_matrix[j,k]<0.05):
-                good_pairs.append((j,k))
+            #print(j,k)
+            OU_fit_result = OU_residual_score(df.iloc[this_group[j],:],df.iloc[this_group[k],:])
+            score_matrix[j,k] = OU_fit_result[0]
+            if (score_matrix[j,k]<0.05 and OU_fit_result[1][1]<1 and OU_fit_result[1][1]>0):
+                good_pairs.append((this_group[j],this_group[k]))
     score_matrices.append(score_matrix)
+ 
+print(len(good_pairs))
 
-'''for i in range(len(score_matrices)):
-    this_score = score_matrices[i]
-    good_pairs_index = (this_score<0.05)*(this_score>0)
-    new_matrix = [np.where(j == True) for j in good_pairs_index ]
-    for index, stock in enumerate(new_matrix):'''
 
-print(good_pairs)
+
+test_df = df
+test_price_df = price_df
+
+'''STAGE 2'''
+slen = -1.25
+slex = -0.5
+ssen = 1.25
+ssex = 0.75
+
+def trading(stock_1,stock_2,train=60,trade=30,delta=1/252, interest= 0.02):
+    ts_1 = np.asarray(test_df.iloc[stock_1,:])
+    ts_2 = np.asarray(test_df.iloc[stock_2,:])
+    price_1 = np.asarray(test_price_df.iloc[stock_1,:])
+    price_2 = np.asarray(test_price_df.iloc[stock_2,:])
+    t=train
+    initial_wealth = 1.
+    duration = len(ts_1)-train+1
+    q_stock_1 = np.zeros(duration)
+    q_stock_2 = np.zeros(duration)
+    wealth = np.full(duration,initial_wealth)
+    bank = wealth
+    print(type(bank[0]))
+    cash = initial_wealth
+    while(t+trade<len(ts_1)):
+        train_ts_1 = ts_1[t-train:t]
+        train_ts_2 = ts_2[t-train:t]
+        LR_model = LinearRegression().fit(train_ts_2.reshape(-1,1),train_ts_1)
+        beta = LR_model.coef_
+        train_res= train_ts_1 - (beta)*train_ts_2
+        model = statsmodels.tsa.api.ARMA(train_res,order=(1,0)).fit(disp=False)
+        a, b = model.params
+        xi = model.resid 
+        kappa= -np.log(b)/delta
+        mean = a/(1-b)
+        sigmasq = np.var(xi)*2*kappa/(1-b**2) 
+        sigmaeq = np.sqrt(sigmasq/(2*kappa))
+        for i in range(trade):
+            if t+i>train:
+                q_stock_1[t+i-train] = q_stock_1[t+i-1-train]
+                q_stock_2[t+i-train] = q_stock_2[t+i-1-train]
+                cash = bank[t+i-1-train]*((1+0.02/252)**(1/252))
+            signal = ((ts_1[t+i]-(beta)*ts_2[t+i])-mean)/sigmaeq
+            if signal > ssen:
+                if q_stock_1[t+i-train] ==0:
+                    q_stock_1[t+i-train] -= 1
+                    q_stock_2[t+i-train] += beta
+                    cash = cash + price_1[t+i] - beta*price_2[t+i]
+            elif (signal <ssex and signal > slex):
+                cash = cash + q_stock_1[t+i-train]*price_1[t+i] + q_stock_2[t+i-train]*price_2[t+i]
+                q_stock_1[t+i-train] = 0
+                q_stock_2[t+i-train] = 0 
+            elif (signal < slen): 
+                if q_stock_1[t+i-train] == 0:
+                    q_stock_1[t+i-train] += 1
+                    q_stock_2[t+i-train] -= beta
+                    cash = cash - price_1[t+i] + beta*price_2[t+i]
+            bank[t+i-train] = cash 
+            wealth[t+i-train] = cash+ q_stock_1[t+i-train]*price_1[t+i]+q_stock_2[t+i-train]*price_2[t+i]
+        t=t+10
+    return wealth 
+
+
+wealth=trading(good_pairs[1][0],good_pairs[1][1])
+print(wealth)
+plt.figure()
+plt.plot(wealth)
+plt.show()
+
+
+            
+
+
