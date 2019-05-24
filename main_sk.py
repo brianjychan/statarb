@@ -192,22 +192,30 @@ def OU_residual_score(ts_1, ts_2):
     LR_model = LinearRegression().fit(ts_2.reshape(-1,1),ts_1)
     res_ts= ts_1 - (LR_model.coef_)*ts_2
     model = statsmodels.tsa.api.ARMA(res_ts,order=(1,0)).fit(disp=False)
-    print(model.summary())
+    #print(model.summary())
     p_values = model.pvalues[1]
     #p_values = statsmodels.stats.diagnostic.acorr_ljungbox(model.resid)[1]
     #res_score = np.min(p_values)
     return p_values
 
 score_matrices = []
+good_pairs = []
 for i in range(no_groups):
     this_group = groups[i]
     group_len = len(this_group)
     score_matrix = np.zeros((group_len,group_len))
     for j in range(group_len):
         for k in range(j+1,group_len):
-            print(j,k)
+            # print(j,k)
             score_matrix[j,k] = OU_residual_score(df.iloc[this_group[j],:],df.iloc[this_group[k],:])
+            if(score_matrix[j,k]<0.05):
+                good_pairs.append((j,k))
     score_matrices.append(score_matrix)
 
+'''for i in range(len(score_matrices)):
+    this_score = score_matrices[i]
+    good_pairs_index = (this_score<0.05)*(this_score>0)
+    new_matrix = [np.where(j == True) for j in good_pairs_index ]
+    for index, stock in enumerate(new_matrix):'''
 
-
+print(good_pairs)
