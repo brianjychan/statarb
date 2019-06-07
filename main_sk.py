@@ -25,18 +25,21 @@ def get_data():
     year_2010 = './year_2010.csv'
     year_2011 = './year_2011.csv'
 
-    df_2010 = data_process(year_2010)
-    df_2011 = data_process(year_2011)
-    return df_2010, df_2011
+    df_2010, price_df_2010 = data_process(year_2010)
+    df_2011, price_df_2010 = data_process(year_2011)
+    return df_2010, price_df_2010
 
-def data_process(year_2010):
+
+## year can be either year_2010 or year_2011, is a data frame
+def data_process(year):
     ''' DATA PREPROCESSING '''
     # Load Data and Convert to Matrix form, Drop NA entries
-    df_2010 = pd.read_csv(year_2010)
+    df_2010 = pd.read_csv(year)
     df_2010 = df_2010.drop('index', axis=1)
     df_2010['date'] = pd.to_datetime(df_2010['date'], format='%Y-%m-%d')
     df_2010 = df_2010.pivot(index='symbol', columns='date', values='price')
     df_2010 = df_2010.dropna()
+    price_df = np.copy(df_2010)
 
     ''' Data normalization '''
     tomorrow_price = df_2010.iloc[:, 1:]
@@ -47,7 +50,7 @@ def data_process(year_2010):
     df_2010_std = df_2010.std(axis=1)
     df_2010 = df_2010.sub(df_2010_mean, axis=0)
     df_2010 = df_2010.div(df_2010_std, axis=0)
-    return df_2010
+    return df_2010, price_df
 
 def pca(df):
 
@@ -56,9 +59,7 @@ def pca(df):
     pca.fit(df.T)
     eig_vecs = pca.components_.T
     eig_vals = pca.explained_variance_
-
     return (eig_vecs, eig_vals, pca)
-
 
 # CRITERIA 1: THRESHOLD 
 def threshold_factors(pca, threshold = 0.55):
@@ -104,13 +105,10 @@ def onatski_factors(eig_vals, r_max = 15):
         j = no_factors
         diff = no_factors - old_no_factors
     return no_factors
-    
 
 
 
 ''' CLUSTERING BASED ON LOADING'''
-
-
 def kmeans(loading_mat):
     # CHOICE 1: K-MEANS CLUSTERING 
     model = KMeans(no_groups)
@@ -138,11 +136,7 @@ def get_groups(preds):
     s = 0
     for group in groups:
         s += len(group)
-        #print(len(group))
 
-    #print('sum')
-    #print(s)
-    # print(groups)
     return groups
 
 
@@ -150,7 +144,6 @@ def get_groups(preds):
 def dbscan(loading_mat):
     dbscan_cluster = DBSCAN(eps=2.5*10e-3).fit(loading_mat)
     new_labels = dbscan_cluster.labels_
-    
     return new_labels
 
 
@@ -194,8 +187,6 @@ def get_score_matrix(df, groups):
         score_matrices.append(score_matrix)
 
     return good_pairs, score_matrices
- 
-
 #####
 
 '''STAGE 2'''
@@ -289,24 +280,24 @@ def get_good_sharpe_ratios(good_pairs, test_df, test_price_df):
     return sharpe_ratios
 
 if __name__ == "__main__":
+    #data pricessing
     df, price_df = get_data()
 
+    #training
     eig_vecs, eig_vals, pca = pca(df)
-
     no_factors = bai_ng_factors(eig_vecs) 
     loading_mat = eig_vecs[:,:no_factors]
     factors = loading_mat.T@df.values
-
     preds, labels = kmeans(loading_mat)
     groups = get_groups(preds)
     new_labels = dbscan(loading_mat)
     vis(loading_mat, labels)
     good_pairs, score_matrices = get_score_matrix(df, groups)
 
-    # Stage 2
+    # Stage 2 - trading
     test_df = df
     test_price_df = price_df
-    wealth, q_stock_1, train_res=trading(test_df, test_price_df, good_pairs[6][0],good_pairs[6][1])
+    wealth, q_stock_1, train_res=trading(good_pairs[6][0],good_pairs[6][1], test_df, test_price_df)
     sharp_ratios = get_good_sharpe_ratios(good_pairs, test_df, test_price_df)
     plot_trading_results(wealth, train_res, q_stock_1)
 
